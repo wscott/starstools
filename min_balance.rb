@@ -50,7 +50,7 @@ when "1"
     FUN = [0,0,0,0,0,0,0,0,0,70,84]
     FREIGHTER_MASS = 183
     FREIGHTER_FUEL = 2600
-    MAX_POP_VALUE = 50
+    MAX_POP_VALUE = 70
     MIN_HOLD_LEVEL = 350_000
     BREEDER_VALUE = 90
 else
@@ -109,11 +109,12 @@ class Race
 	    n.elementsum(i)
 	end
 	print "Total planets  = #{@tot_pla}\n"
-	print "Total resource = #{@tot_res} (#{@tot_res/@tot_pla})\n"
-	print "Total minerals = #{@tot_min.join(%Q(\t))}\n"
-	print "  Ave minerals = #{@tot_min.map{|n| n / @tot_pla}.join(%Q(\t))}\n"
-	print "scaled @ 500   = #{mineral_targets(500).join(%Q(\t))}\n"
-	print "scaled @ 2000  = #{mineral_targets(2000).join(%Q(\t))}\n"
+	print "Total resource\t= #{@tot_res} (#{@tot_res/@tot_pla})\n"
+	print "\t\t\tiron\tboron\tgerm\n"
+	print "Total minerals =\t#{@tot_min.join(%Q(\t))}\n"
+	print "  Ave minerals =\t#{@tot_min.map{|n| n / @tot_pla}.join(%Q(\t))}\n"
+	print "scaled @ 500   =\t#{mineral_targets(500).join(%Q(\t))}\n"
+	print "scaled @ 2000  =\t#{mineral_targets(2000).join(%Q(\t))}\n"
 	print "-----------------\n"
     end	
     def mineral_targets(res)
@@ -467,10 +468,15 @@ end
 
 print "---------\n"
 print "Num ships = #{num_ships}\n"
-print "Planets supply = #{plasource.join(%Q(\t))} = #{plasource.sum}\n"
-print "Total   supply = #{sumsource.join(%Q(\t))} = #{sumsource.sum}\n"
-print "Planets needed = #{planeeded.join(%Q(\t))} = #{planeeded.sum}\n"
-print "Total   needed = #{sumneeded.join(%Q(\t))} = #{sumneeded.sum}\n"
+print "\t\t  "
+MIN_NAME.each do |m|
+    print "#{m}\t"
+end
+print "  total\n"
+print "Planets supply\t= #{plasource.join(%Q(\t))}\t= #{plasource.sum}\n"
+print "Total   supply\t= #{sumsource.join(%Q(\t))}\t= #{sumsource.sum}\n"
+print "Planets needed\t= #{planeeded.join(%Q(\t))}\t= #{planeeded.sum}\n"
+print "Total   needed\t= #{sumneeded.join(%Q(\t))}\t= #{sumneeded.sum}\n"
 
 network.close
 network = File.open("network.dmx", "w");
