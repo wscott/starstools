@@ -1,0 +1,101 @@
+#!/usr/intel/bin/perl 
+
+sub normalize {
+    my($g, $t, $r) = @_;
+    my($ng, $nt, $nr);
+
+    if ($g >= 2) {
+	$ng = ($g - 2)/0.24 + 25;
+    } elsif ($g >= 1) {
+	$ng = ($g - 1)/0.04;
+    } elsif ($g >= 0.5) {
+	$ng  = (1/$g - 1) / (-0.04);
+    } else {
+	$ng = (1/$g - 2)/(-0.24) - 25;
+    }
+    $ng = int($ng+0.5);
+    $nt = $t / 4;
+    $nr = $r - 50;
+
+    return($ng, $nt, $nr);
+}
+
+my(%PLA);
+
+read_pla(1);
+read_pla(11);
+
+@width_w = (31, 29, 20);
+@ideal_w = (-3, 2, 20);
+@width_d = (24, 24, 18);
+@ideal_d = (0, 0, -23);
+
+@list = ();
+foreach $planet (keys %PLA) {
+    @pla = map {$PLA{$planet}{$_ . "Orig"}} qw(Grav Temp Rad);
+    @pla = normalize(@pla);
+    $planet =~ s/\s/_/g;
+
+    for ($i = 0; $i < 3; $i++) {
+	$w[$i] = abs($pla[$i] - $ideal_w[$i]);
+	$wt[$i] = max($w[$i] - 10, 0);
+	$wtt[$i] = max($w[$i] - 30, 0);
+	$d[$i] = abs($pla[$i] - $ideal_d[$i]);
+	$dt[$i] = max($d[$i] - 10, 0);
+	$dtt[$i] = max($d[$i] - 30, 0);
+    }
+
+    push(@list, [$planet,
+	         100 * habitat(@w, @width_w),
+	         100 * habitat(@wt, @width_w),
+	         100 * habitat(@wtt, @width_w),
+	         100 * habitat(@dt, @width_d),
+	         100 * habitat(@dtt, @width_d)
+		 ]);
+}
+
+foreach (sort {max(@$b[2,4]) <=> max(@$a[2,4])} @list) {
+    printf("%-20s %3d %3d %3d -- %3d %3d\n", @$_);
+}
+
+sub max {
+    $_[0] > $_[1] ? $_[0] : $_[1];
+}
+sub min {
+    $_[0] < $_[1] ? $_[0] : $_[1];
+}
+
+sub habitat {
+    my($G, $T, $R, $G_width, $T_width, $R_width) = @_;
+
+    if ($G > $G_width || $T > $T_width || $R > $R_width) {
+	(max(min($G_width - $G, 0), -15) +
+	 max(min($T_width - $T, 0), -15) + 
+	 max(min($R_width - $R,0), -15))
+	    / 100;
+    } else {
+	((1-($G / $G_width)) ** 2 + 
+	 (1-($T / $T_width)) ** 2 + 
+	 (1-($R / $R_width)) ** 2) ** 0.5 
+	     * (1 - max($G / $G_width - 0.5, 0)) 
+	     * (1 - max($T / $T_width - 0.5, 0)) 
+	     * (1 - max($R / $R_width - 0.5, 0))
+		 / (3**0.5);
+    }
+}
+
+sub read_pla {
+    my($player) = @_;
+
+    open(PLA, "GUARD.P$player") || die "Can't open GUARD.P$player,";
+    chomp($header = <PLA>);
+
+    @headers = split(/\t/, $header);
+    
+    while (<PLA>) {
+	chomp;
+	@values = split(/\t/, $_);
+
+	@{$PLA{$values[0]}}{@headers} = @values;
+    }
+}

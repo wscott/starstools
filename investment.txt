@@ -1,0 +1,72 @@
+Investment Returns in "Stars!" 
+
+The following is a discussion of the math behind resource returns on investment in stars, and some of the more obvious implications. Most stars players are aware of the return from building
+factories when Germanium (hereafter G) is abundant. The formula then is just:
+
+return = FactEff/FactCost
+
+For example, with the defaults values of 1.0 Fact Eff and 10 FactCost, the return is 1/10 or 10%. 100 resources spent on factories raise your permanant income by .1 100 = 10. If the FactCost
+were 9, the return would be 11.11% and so on. 
+
+However, these calculations assume that the G used to build the factories is free, which it is not. So the question naturally arises "what return do I get if I have to first build the mines to get
+the G to build the factories?" The usual case is an autobuild order to build a large number of factories, followed by a large number of mines, so that mines are built whenever there isn't
+enough G for a factory. Calculating this return is more complicated than the above case where we ignore G. What is technically required is the internal rate of return of the autobuild order.
+Sparing everyone the details, a little algebra yields the following formula for the general case: 
+
+PE = (FactCost+(FactCost^2 + 4*MineCost*G/Fact*(100/Gcon)*FactEff)^.5)/(2*FactEff)
+
+Where:
+
+PE = "Price to Earnings Ratio" = 1/rate of return (e.g. PE 10 -> 10% return, PE 20 -> 5% return) 
+
+FactCost = resource cost of 1 factory 
+
+FactEff = resources produced by 1 factory 
+
+MineCost = resource cost of 1 mine G/Fact = G cost of 1 factory (default 4, 3 with box) 
+
+Gcon = Germanium concentration (for long term calculations, keep in mind the Gcon will fall, lowering the return over time. Use an average figure in this case). 
+
+It may help to remember the formula if you remember your high school algebra. The quadratic formula just says that ax^2 + bx + c = 0 has roots (solutions for x): x = (-b +/- (b^2 -
+4ac)^.5)/2a If that doesn't help you remember, don't worry about it. 
+
+A few obvious points about the above formula: Factory cost is the most important factor. The equation is linear in factory cost and square root order in all other variables. The sensitivity of
+returns to the Gcon depends on the whole "mining coefficient" = 
+
+4*G/Fact*MineCost*100/Gcon*FactEff 
+
+This means cheaper mines and the G box can give similar results in terms of the resource return from economic spending. Of course, cheap mines cost less advantage points. The trade-off
+here is a bit faster mineral depletion. 
+
+Using the above formula, it is easy to make the following table for the "canned" races (values approximate): 
+
+30 Gcon 50 Gcon 70 Gcon 
+
+Human 7.5% 8.0% 8.5% 
+
+Rabbit 7.5% 8.0% 8.5% 
+
+Silic 6.75% 7.25% 7.75% 
+
+Ante 6.5% 7.5% 8.25% 
+
+Insect 6.0% 6.5% 7.0% 
+
+Nucleo 5.0% 6.0% 6.5% 
+
+Note that none of the canned races raise their economic rate of return above the Humanoid. This can, however, easily be done if you can find the advantage points. A typical improvement
+might be cheaper factories and mines, slightly more efficient factories, and the G box. If you spend, say, 400 points on the economy screen with this purpose in view, you can get economic
+return rates well into double digits. 
+
+In my humble opinion, players should pay as much attention to this issue as they do to population growth and ultimate planet capacity. Players who sacrifice this aspect of their race design
+for other advantages can easily find themselves facing opponents with economies twice as large around years 30 - 40 (with Acc BBS start), even with similar planets. Of course, everyone
+has their favorite style and design. The above formula will help you check the efficiency of your race in this regard; you can then make the tradeoffs intelligently. 
+
+I further note that the above formula deals with planetary mines as the source of the G. You can also get it remotely. Calculating the returns then is more complicated, but you won't be far
+off if you use the cost of the ships involved (in both resources and G) in place of the mine costs above. (The added complication comes from the time lag before the G is received, so regard
+the calculated figure as a high estimate). Remote mining often involves an additional Ironium constraint (especially early), which I leave to the next player to explain to us all mathematically. 
+
+I hope this is useful, and I hope to see you all in games. 
+
+- Jason Cawley <jasoncawley@worldnet.att.net>
+Chicago, IL USA - 

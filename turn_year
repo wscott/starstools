@@ -1,0 +1,13 @@
+#!/usr/intel/bin/perl
+
+undef $/;
+
+while (<>) {
+	$year = substr($_, 12, 2);
+
+	$year = 2400 + unpack 'v', $year;
+
+	last;
+}
+
+print "$year\n";

@@ -1,0 +1,235 @@
+#!/usr/bin/perl
+
+use POSIX qw(ceil);
+
+$max_planet = 550_000;
+$growth = 0.10;
+$mass_gen = ceil(((8/9)**2)/3*$max_planet*$growth / 100);
+$breed_size = $max_planet / 4;
+
+# Setteler's delight
+$freewarp = 6;
+@FUN = (0, 0, 0, 0, 0, 0, 0, 140, 275, 480, 576);
+# Quick Jump5
+#@FUN = (0, 0, 25, 100, 100, 100, 180, 500, 800, 900, 1080);
+
+$f_mass = 15;
+$f_cargo = 60;
+$f_fuel = 150;
+$f_res = 13;
+
+$p_mass = 13;
+$p_fuel = 400;
+$p_res = 9;
+
+
+($name, $num) = @ARGV;
+
+open(MAP, "$name.MAP") || die;
+while(<MAP>) {
+	chomp;
+	s/\r$//;
+	($jumk, $x, $y, $planet) = split(/\t/);
+	$planets{$planet}{x} = $x;
+	$planets{$planet}{y} = $y;
+}
+close(MAP);
+
+# name => {fuel => 1,
+#          fill => 1,
+#	   x => 3, y => 5,
+#         }
+
+my(@planets);
+
+open(PLA, "$name.P$num") || die "Can't open $name.P$num";
+while (<PLA>) {
+	chomp;
+	@_ = split(/\t/);
+	next if $_[1] ne "Humanoid";
+	$p = $planets{$_[0]};
+	$p->{fuel} = 1 if $_[2];
+	$p->{fill} = $_[4] < $breed_size;
+	$p->{value} = $_[5] + 0;
+
+	push(@planets, $_[0]);
+}
+
+# build distance matrix
+foreach $p1 (@planets) {
+	foreach $p2 (@planets) {
+		$dist{$p1, $p2} = distance($mass_gen,
+					   $planets{$p1}, $planets{$p2}, 0);
+	}
+}
+
+# floyd's algroithm
+foreach $k (@planets) {
+    foreach $p1 (@planets) {
+	foreach $p2 (@planets) {
+	    if ($dist{$p1, $k}  + $dist{$k, $p2} < $dist{$p1, $p2}) {
+		$dist{$p1, $p2} = $dist{$p1, $k} + $dist{$k, $p2};
+		$path{$p1, $p2} = $k;
+	    }
+	}
+    }
+}
+
+# find shortest path from each supply planet to
+# nearest planet to be filled.  Record routes.
+$sum = 0;
+foreach $p1 (@planets) {
+    next if $planets{$p1}{fill};
+    $min = 1e6;
+    foreach $p2 (@planets) {
+	next if !$planets{$p2}{fill};
+	if ($dist{$p1,$p2} < $min) {
+	    $min = $dist{$p1,$p2};
+	    $minplanet = $p2;
+	}
+    }
+    $sum += $min;
+
+    $value = $planets{$p1}{value} / 100;
+    $p = $p1;
+    printf "%5d: %s -> ", $min, $p1;
+    while (defined $path{$p, $minplanet}) {
+	my($n) = $path{$p, $minplanet};
+	$total{$p, $n} += $mass_gen * $value;
+	$p = $n;
+	printf "%s -> ", $p;
+    }
+    $total{$p, $minplanet} += $mass_gen * $value;
+    printf "%s\n", $minplanet;
+}
+print "Total resources needed $sum\n";
+
+print "\nRoute info:\n";
+foreach (sort keys %total) {
+    ($f, $t) = split(/$;/, $_);
+    print "$f -> $t ($total{$_}):\n\t";
+    distance($total{$_},
+	     $planets{$f}, $planets{$t}, 1);
+}
+
+sub distance ($$$$) {
+    my($mass, $p1, $p2, $print) = @_;
+
+    return 0 if $p1 eq $p2;
+
+    $nf = ceil($mass / $f_cargo);
+    
+    $dist = sqrt(($p1->{x} - $p2->{x})**2 + 
+		 ($p1->{y} - $p2->{y})**2);
+
+    # assume free warp
+    $time = ceil($dist / $freewarp ** 2);
+    $mincost = $nf * $time * $f_res * 2;
+    $minwarp = $freewarp;
+    $minrwarp = $freewarp;
+    $minn = 0;
+    
+    if ($p1->{fuel} && $p2->{fuel}) {
+	# fuel at both ends
+ 	$mc = $mincost / 2;
+	for ($warp = $freewarp + 1; $warp <= 9; ++$warp) {
+	    $time = ceil($dist / $warp ** 2);
+	    $f = $FUN[$warp] * ceil($dist / $time) / 200;
+	    # fuel = (mass * f + 9)/100 * time
+
+	    $fuel = ($nf * ($f_mass + $f_cargo) * $f + 9)/100 * $time;
+
+	    if ($fuel > $nf * $f_fuel) {
+		# need pods
+
+		$fuelp  = 2 * ($p_mass * $f + 9)/100 * $time;
+
+		if ($fuelp > $p_fuel) {
+			# can't be done
+			next;
+		}
+		$n = ($fuel - $nf * $f_fuel) /
+		     ($p_fuel - $fuelp);
+	    } else {
+		$n = 0;
+	    }
+	    $n = ceil $n;
+
+ 	    $cost = ($nf * $f_res + $n * $p_res) * $time;
+	    if ($cost < $mc) {
+		$mc = $cost;
+		$minwarp = $warp;
+		$minn = $n;
+	    }
+	}
+ 	$minrcost = $mincost / 2;
+	for ($rwarp = $minwarp; $rwarp <= 9; ++$rwarp) {
+	    $rtime = ceil($dist / $rwarp ** 2);
+	    $f = $FUN[$rwarp] * ceil($dist / $rtime) / 200;
+	    
+	    $fuel = (($nf * ($f_mass + $f_cargo) +
+		      $n * $p_mass) * $f + 9)/100 * $rtime;
+	    
+	    if ($fuel > $nf * $f_fuel + $n * $p_fuel) {
+		# can't be done
+		next;
+	    }
+ 	    $cost = ($nf * $f_res + $n * $p_res) * $rtime;
+	    if ($cost < $minrcost) {
+		$minrcost = $cost;
+		$minrwarp = $rwarp;
+	    }
+	}
+	$mincost = $mc + $minrcost;
+    } elsif ($p1->{fuel} || $p2->{fuel}) {
+	# fuel at only one end
+
+	for ($warp = $freewarp + 1; $warp <= 9; ++$warp) {
+	    $time = ceil($dist / $warp ** 2);
+	    $f = $FUN[$warp] * ceil($dist / $time) / 200;
+
+	    for ($rwarp = $warp; $rwarp <= 9; ++$rwarp) {
+		$rtime = ceil($dist / $rwarp ** 2);
+		$rf = $FUN[$rwarp] * ceil($dist / $rtime) / 200;
+
+		$fuelp = ($p_mass * $f + 9)/100 * $time +
+		    ($p_mass * $rf + 9)/100 * $rtime;
+		
+		if ($fuelp > $p_fuel) {
+		    # can't be done 
+		    next;
+		}
+		
+		$fuel = ($nf * ($f_mass + $f_cargo) * $f + 9)/100 * $time +
+		    ($nf * $f_mass * $rf + 9)/100 * $rtime;
+		
+		if ($fuel > $nf * $f_fuel) {
+		    # need pods
+
+		    $n = ($fuel - $nf * $f_fuel) /
+			($p_fuel - $fuelp);
+		} else {
+		    $n = 0;
+		}
+		$n = ceil $n;
+		
+		$cost = ($nf * $f_res + $n * $p_res) * ($time + $rtime);
+		if ($cost < $mincost) {
+		    $mincost = $cost;
+		    $minwarp = $warp;
+		    $minrwarp = $rwarp;
+		    $minn = $n;
+		}
+	    }
+	}
+    }
+    if ($print) {
+	printf("%d freighters %d pods warp $minwarp and $minrwarp back\n", 
+	       $nf * ($time + $rtime), 
+	       $minn * ($time + $rtime));
+    }
+    return $mincost;
+}
+
+
+

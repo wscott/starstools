@@ -1,0 +1,23 @@
+#!/usr/intel/bin/perl
+
+($name, $num) = @ARGV;
+
+open(MAP, "$name.MAP") || die;
+while(<MAP>) {
+	($jumk, $x, $y, $planet) = split(' ');
+	$planets{$planet} = "$x $y";
+}
+close(MAP);
+
+for($i=1; $i <= $num; ++$i) {
+    open(PLA, "$name.P$i") || die "Can't open $name.P$i";
+
+    while (<PLA>) {
+	last if /100%/;
+    }
+#    print "$i ", (split)[1], "\n";
+    s/\s.*//s;
+    print $planets{$_}, "\n";
+    close(PLA);
+
+}
