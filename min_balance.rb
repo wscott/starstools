@@ -1,5 +1,7 @@
 #!/usr/bin/ruby -w
 
+# %Z%%K%
+
 # TODO
 #  Read race description from file
 #  Handle stopping for gas when delivering
@@ -55,6 +57,8 @@ else
     print "Race #{ARGV[0]} not handled\n"
     exit 1
 end
+
+MIN_NAME = ['iron', 'boron', 'germ', 'col']
 
 module Enumerable
     # inject(n) { |n, i| ...}
@@ -119,18 +123,25 @@ class Race
 end
 
 class Planet
-    attr_reader(:name, :owner, :res, :mins, :extra, :gaterange)
+    attr_reader(:name, :owner, :res, :mins, :gaterange)
     attr_reader(:pos)
     attr_accessor(:input_nodes, :output_nodes, :node)
+    attr_accessor(:popneeded)
     protected(:gaterange, :pos)
-    def initialize(x, y)
+    @@planets = {}
+    def Planet.lookup(name)
+	@@planets[name]
+    end
+    def initialize(name, x, y)
+	@name = name
 	@pos = Point.new(x, y)
 	@shipped_mins = [0,0,0,0]
 	@input_nodes = []
 	@output_nodes = []
+	@extra = nil
+	@@planets[@name] = self
     end
     def planet_info(p)
-	@name = p.Planet_Name
 	@owner = p.Owner
 	@pop = p.Population.to_i
 	if p.Value		# handle 'nil' values
@@ -150,28 +161,39 @@ class Planet
 	    @shipped_mins[i] += v
 	end
     end
-    def calc_extra()
+    def pop
+	@pop + @shipped_mins[3]
+    end
+    def maxpop
+	@value * POPMAX / 100.0
+    end
+    def extra
+	return @extra if @extra
 	@extra = [0, 0, 0, 0]
 	if @pop < 1000
-	    return   # not tech trading planets
+	    return  @extra # not tech trading planets
 	end
 	if @shipped_mins.max > 0
 	    print "#{@name} shipped #{@shipped_mins.join(', ')}\n"
 	end
 	# handle population
-	extra[3] = 0
-	pop = @pop + @shipped_mins[3]
-	plamax = @value * POPMAX / 100.0
-	if (@value < MAX_POP_VALUE || HOMEWORLD[@name]) && pop < plamax
-	    extra[3] = ((pop - plamax) / (100.0*UNIT)).to_i
-	elsif @value < BREEDER_VALUE && pop < MIN_HOLD_LEVEL
-	    extra[3] = ((pop - MIN_HOLD_LEVEL) / (100.0*UNIT)).to_i
-	elsif @value >= BREEDER_VALUE
-	    extra[3] = ((pop - MIN_HOLD_LEVEL) / (100.0*UNIT)).to_i # trunc
+	if @value < MAX_POP_VALUE || HOMEWORLD[@name]
+	    # when filling a planet allow a 1/2 a freighter overcommit
+	    # so the planet gets closer to full.  We could get completely
+	    # full, but these a freighter might be almost empty
+	    target = maxpop + 50 * UNIT   
+	else 
+	    target = MIN_HOLD_LEVEL
+	end
+	extra[3] = ((pop - target) / (100.0*UNIT)).to_i
+	# only export from breeders
+	if extra[3] > 0 && @value < BREEDER_VALUE
+	    extra[3] = 0
 	end
 	newpop = pop
 	if extra[3] < 0
-	    newpop -=  extra[3] * 100 * UNIT
+	    newpop +=  -extra[3] * 100 * UNIT
+	    newpop = [newpop,maxpop].min
 	end
 	targets = @owner.mineral_targets(@res)
 
@@ -191,9 +213,19 @@ class Planet
 	    if v - @extra[i] * UNIT < MIN_MINERALS
 		@extra[i] -= (MIN_MINERALS / UNIT.to_f).ceil
 	    end
-	    print "#{@name} #{i} at #{v} want #{targets[i]} extra #{@extra[i]}\n"
+	    if @extra[i] != 0
+		print "#{@name} #{MIN_NAME[i]} at #{v} want #{targets[i]} extra #{@extra[i]}\n"
+	    end
 	end
-	print "#{@name} 3(#{@value}) at #{pop} extra #{@extra[3]}\n"
+	if @extra[3] != 0
+	    print "#{@name} col(#{@value}) at #{pop} extra #{@extra[3]}\n"
+	end
+	@shipped_mins.each_with_index do |sh,i|
+	    if @extra[i] > 0 && sh > 0
+		print "#{@name} importing and exporting #{MIN_NAME[i]} ???\n"
+	    end
+	end
+	@extra
     end
     def <=>(b)
 	self.name <=> b.name
@@ -299,26 +331,17 @@ def parse_stars_file(structname, filename)
     gsub!(" ", "_")    # can't have method's with spaces
     fields = split "\t"
     st = Struct.new(structname, *fields)
-    array = []
     file.each do |line|
 	line.chomp!
 	line.sub!(/\r$/, '')
 	fields = line.split("\t")
-	obj = st.new(*fields)
-	if iterator?
-	    yield obj
-	else
-	    array << obj
-	end
+	yield st.new(*fields)
     end
-    return array
 end
     
-planets = {}
 ships = []
 parse_stars_file("Map", GAME + ".map") do |p|
-    pla = Planet.new(p.X, p.Y)
-    planets[p.Name] = pla
+    pla = Planet.new(p.Name, p.X, p.Y)
 end
 
 races = Hash.new
@@ -328,12 +351,12 @@ parse_stars_file("Planet_info", GAME + ".p" + PLAYERNO.to_s) do |p|
 	races[p.Owner] = Race.new(p.Owner)
     end
     p.Owner = races[p.Owner]
-    planets[p.Planet_Name].planet_info(p)
+    Planet.lookup(p.Planet_Name).planet_info(p)
 end
 
 parse_stars_file("Fleet_info", GAME + ".f" + PLAYERNO.to_s) do |p|
-    pla = planets[p.Planet]
-    dest = planets[p.Destination]
+    pla = Planet.lookup(p.Planet)
+    dest = Planet.lookup(p.Destination)
     pla = nil if pla && pla.owner.name != RACE
     dest = nil if dest && dest.owner.name != RACE
     
@@ -375,7 +398,7 @@ races[RACE].planets.each do |p|
 end
 
 # connect transports to planets
-ships.each do |s|
+for s in ships do
     network.printf("a %d %d 0 %d %d\n", s.node, s.dest.node, s.cnt, s.eta)
     arcs += 1
 end
@@ -405,7 +428,6 @@ for i in 0..3 do
 end
 # add supply and needed nodes
 for p in races[RACE].planets.sort do
-    p.calc_extra
     for min in 0..3 do
 	extra = p.extra[min]
 	if extra != 0
@@ -442,7 +464,6 @@ for min in 0..3 do
 	end
     end
 end
-source = needed = nil
 
 print "---------\n"
 print "Num ships = #{num_ships}\n"
@@ -470,7 +491,6 @@ File.open("network.out", "r").each do |$_|
     end
 end
 
-min_name = ['iron', 'boron', 'germ', 'col']
 
 ship = {}
 unused_ships = Hash.new(0)
@@ -496,9 +516,9 @@ ships.each do |s|
 	    when 'input'
 		to = path[2].data
 		min = path[2].min
-#		print "from #{from} to #{to} #{UNIT} #{min_name[min]}\n"
+#		print "from #{from} to #{to} #{UNIT} #{MIN_NAME[min]}\n"
 		ship[from][to] ||= Hash.new(0)
-		ship[from][to][min] += 1 
+		ship[from][to][min] += UNIT 
 	    when 'planet'
 		to = path[1].data
 		ship[from][to] ||= Hash.new(0)
@@ -512,8 +532,11 @@ ships.each do |s|
     end
 end
     
-print "done\n"
-	    
+# Track how many people a planet really needs because we can overcommit
+for p in needed[3]
+    p.popneeded = ((p.maxpop - p.pop) / 100).floor
+end
+
 for from in ship.keys.sort do
     print "Ship from #{from.name}:\n"
     for to in ship[from].keys.sort do
@@ -523,7 +546,11 @@ for from in ship.keys.sort do
 	    if min == 4
 		print "(#{from.dist(to,0)}) #{cnt} ships\n"
 	    else 
-		print "(#{from.dist(to,1)}) #{cnt.*UNIT}kT #{min_name[min]}\n"
+		if min == 3	# population
+		    cnt = [cnt,to.popneeded].min
+		    to.popneeded -= cnt
+		end
+		print "(#{from.dist(to,1)}) #{cnt}kT #{MIN_NAME[min]}\n"
 	    end
 	end
     end
