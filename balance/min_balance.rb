@@ -63,9 +63,14 @@ end
 
 class Race
     attr_reader(:name, :planets, :tot_min)
+    @@races = {}
+    def Race.lookup(name)
+	@@races[name]
+    end
     def initialize(name)
 	@name = name
 	@planets = []
+	@@races[name] = self
     end
     def new_planet(p)
 	@planets.push(p)
@@ -87,11 +92,17 @@ class Race
     end	
     def mineral_targets(res)
 	real_res = @tot_res
-	real_min = @tot_min
+	real_min = @tot_min.dup
 	OVERRIDES.each do |name,a|
+	    next if name == "ALL"
 	    real_res -= Planet.lookup(name).res
 	    a.each_with_index do |v,i|
-		real_min[i] -= v
+		next if i > 2	# don't include pop
+		real_min[i] -= if v.type == Array then
+				   v[0]
+			       else
+				   v
+			       end
 	    end
 	end
 	real_min.map{|n| (n * (res.to_f / real_res)).floor}
@@ -99,11 +110,11 @@ class Race
 end
 
 class Planet
-    attr_reader(:name, :owner, :res, :mins, :gaterange, :value)
+    attr_reader(:name, :owner, :res, :mins, :gaterange, :gatemass, :value)
     attr_reader(:pos)
     attr_accessor(:input_nodes, :output_nodes, :node)
     attr_accessor(:popneeded)
-    protected(:gaterange, :pos)
+    protected(:gaterange, :gatemass, :pos)
     @@planets = {}
     def Planet.lookup(name)
 	@@planets[name]
@@ -115,6 +126,7 @@ class Planet
 	@input_nodes = []
 	@output_nodes = []
 	@extra = nil
+	@owner = nil
 	@@planets[@name] = self
     end
     def planet_info(p)
@@ -131,6 +143,7 @@ class Planet
 	@owner.new_planet(self)
 	@factories = p.Factories.to_i
 	@gaterange = p.GateRange.to_i
+	@gatemass = p.GateMass.to_i
     end
     def shipped_mins(m)
 	m.each_with_index do |v,i|
@@ -147,16 +160,25 @@ class Planet
 	targets = @owner.mineral_targets(res)
 	# account for extra germ to build new factories, assuming new 
 	# people arrive
-	more_germ = (pop/10000 * FACTS - @factories) * FACT_COST
+	more_germ = (pop/10000 * FACTS - @factories).floor * FACT_COST
 	if more_germ > 0
 	    print "#{@name} needs #{more_germ} extra germ to finish factories\n"
 	    targets[2] += more_germ
 	end
-	if a = OVERRIDES[@name]
+	if a = OVERRIDES[@name] || a = OVERRIDES["ALL"]
 	    targets.each_with_index do |v,i|
 		targets[i] = a[i] || v
 	    end
 	end
+	# translate nums into min/max array
+	targets.collect! do |v|
+	    if v.type == Fixnum
+		[v - UNIT, v + UNIT]
+	    else 
+		v
+	    end
+	end
+#	print "#{@name} target #{targets.inspect}\n"
 	targets
     end
     def extra
@@ -176,7 +198,7 @@ class Planet
 	    target = maxpop
 	    target += 50 * UNIT if pop < target
 	else 
-	    target = MIN_HOLD_LEVEL
+	    target = maxpop / 4
 	end
 	extra[3] = ((pop - target) / (100.0*UNIT)).to_i
 	# only export from breeders
@@ -188,12 +210,21 @@ class Planet
 	    newpop +=  -extra[3] * 100 * UNIT
 	    newpop = [newpop,maxpop].min
 	end
+	if OVERRIDES[@name] && OVERRIDES[@name][3] && OVERRIDES[@name][3] == -1
+	    extra[3] = 0
+	end
 	targets = mineral_targets(@res, newpop)
 
 	@mins.each_with_index do |v,i|
 	    # mins + mining + shipments
 	    cur = v + @min_rate[i] * YEARS + @shipped_mins[i]
-	    @extra[i] = ((cur - targets[i]) / UNIT.to_f).to_i  #trunc
+	    min, max = *targets[i]
+	    if cur < min
+		@extra[i] = -((min - cur) / UNIT.to_f).ceil
+	    elsif cur > max
+		@extra[i] = ((cur - max) / UNIT.to_f).ceil
+	    end
+
 	    # make sure we will be above MIN_MINERALS after shipments and mining
 	    over = MIN_MINERALS - (cur - @extra[i] * UNIT)
 	    if over > 0
@@ -205,7 +236,7 @@ class Planet
 	    	extra[i] -= (over / UNIT.to_f).ceil
 	    end
 	    if @extra[i] != 0
-		print "#{@name} #{MIN_NAME[i]} at #{v} want #{targets[i]} extra #{@extra[i]}\n"
+		print "#{@name} #{MIN_NAME[i]} at #{v} want #{targets[i][0]}-#{targets[i][1]} extra #{@extra[i]}\n"
 	    end
 	end
 	if @extra[3] != 0
@@ -224,13 +255,14 @@ class Planet
     def dist(p, loaded)
 	dist = @pos - p.pos
 	mass = FREIGHTER_MASS + UNIT * loaded
-	if loaded == 0 && dist < @gaterange && dist < p.gaterange
+	if loaded == 0 && dist < @gaterange && dist < p.gaterange &&
+		mass < @gatemass && mass < p.gatemass
 	    1
 	else
 	    warp = 10
 	    while warp > 0
 		rtime = (dist / warp**2).ceil
-		f = FUN[warp] * (dist/rtime).ceil / 200
+		f = FUN[warp-1] * (dist/rtime).ceil / 200
 		fuel = (mass * f + 9)/100 * rtime;
 		fuel *= FUELEFF
 		break if fuel < FREIGHTER_FUEL
@@ -331,7 +363,6 @@ def parse_stars_file(structname, filename)
 end
 
 def filecase(f)
-    print "f = #{f}\n"
     dir, base = *File.split(f)
     file = Dir.open(dir).detect {|e| e.downcase == base.downcase }
     if file.nil?
@@ -346,49 +377,53 @@ parse_stars_file("Map", filecase(GAME + ".map")) do |p|
     pla = Planet.new(p.Name, p.X, p.Y)
 end
 
-races = Hash.new
+myrace = Race.new(RACE)
 
 parse_stars_file("Planet_info", filecase(GAME + ".p" + PLAYERNO.to_s)) do |p|
-    if !races.has_key? p.Owner
-	races[p.Owner] = Race.new(p.Owner)
+    unless owner = Race.lookup(p.Owner)
+	owner = Race.new(p.Owner)
     end
-    p.Owner = races[p.Owner]
+    p.Owner = owner
     Planet.lookup(p.Planet_Name).planet_info(p)
 end
 
 parse_stars_file("Fleet_info", filecase(GAME + ".f" + PLAYERNO.to_s)) do |p|
     pla = Planet.lookup(p.Planet)
     dest = Planet.lookup(p.Destination)
-    pla = nil if pla && pla.owner.name != RACE
-    dest = nil if dest && dest.owner.name != RACE
+    pla = nil if pla && pla.owner != myrace
+    dest = nil if dest && dest.owner != myrace
     
-    if dest && p.Task == "QuikDrop"
+    if dest && (p.Task == "QuikDrop" || p.Task == "Scrap Fleet")
 	dest.shipped_mins([p.Iron, p.Bora, p.Germ, p.Col].collect {|s| s.to_i})
     end
+    if pla && p.Destination == '-- ' && p.Task == "Scrap Fleet"
+       pla.shipped_mins([p.Iron, p.Bora, p.Germ, p.Col].collect {|s| s.to_i})
+    end
     if p.Fleet_Name =~ /^#{RACE} #{FREIGHTER}/
+	cnt = p.Unarmed.to_i + p.Utility.to_i
 	if pla && p.Destination == '-- ' && p.Task == "(no task here)"
-	    ships.push(Transport.new(p.Unarmed.to_i, pla, 0));
+	    ships.push(Transport.new(cnt, pla, 0));
 	elsif dest != nil
-	    ships.push(Transport.new(p.Unarmed.to_i, dest, p.ETA.to_i))
+	    ships.push(Transport.new(cnt, dest, p.ETA.to_i))
 	else
 	    print "Ignoring #{p.Fleet_Name} at '#{p.Planet}' going to '#{p.Destination}' task #{p.Task}\n"
 	end
     end
 end
+
 num_ships = ships.map {|s| s.cnt }.sum
+print "num_ships = #{num_ships}\n";
+user_adjust(myrace) if defined? user_adjust()
 
-user_adjust(races[RACE]) if defined? user_adjust()
-
-races[RACE].summary
+myrace.summary
 
 done_node = Node.new("done")
 
 netfile = File.join($OUTDIR, "network");
 network = File.open("#{netfile}.dmx.x", "w");
-# node 1 is output node
 arcs = 0
 
-network.printf("n 1 -%d\n", num_ships)
+network.printf("n %d -%d\n", done_node, num_ships)
 
 # add nodes for incoming transports
 for s in ships do
@@ -398,9 +433,12 @@ for s in ships do
 end
 
 # assign planets nodes
-races[RACE].planets.each do |p|
+myrace.planets.each do |p|
     p.node = Node.new("planet", p)
 end
+
+# arcs use the following format
+# a <fromnode> <tonode> <minflow> <maxflow> <cost>
 
 # connect transports to planets
 for s in ships do
@@ -409,8 +447,8 @@ for s in ships do
 end
 
 # add graph for empty transports
-for s in races[RACE].planets do
-    for n in races[RACE].planets do 
+for s in myrace.planets do
+    for n in myrace.planets do 
 	next if s == n;
 
 	network.printf("a %d %d 0 %d %d\n",
@@ -432,7 +470,7 @@ for i in 0..3 do
 	needed[i] = []
 end
 # add supply and needed nodes
-for p in races[RACE].planets.sort do
+for p in myrace.planets.sort do
     for min in 0..3 do
 	extra = p.extra[min]
 	if extra != 0
@@ -447,7 +485,9 @@ for p in races[RACE].planets.sort do
 	    else
 		needed[min].push(p)
 		p.output_nodes[min] = Node.new('output', p, min)
-		network.printf("a %d 1 0 %d 0\n", p.output_nodes[min], -extra)
+		network.printf("a %d %d 0 %d %d\n", 
+			       p.output_nodes[min], done_node, -extra,
+			       PRIORITIES[min])
 		arcs += 1
 		planeeded[min] += 1
 		sumneeded[min] += -extra
