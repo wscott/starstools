@@ -54,7 +54,12 @@ when "2"
     MAX_POP_VALUE = 70
     MIN_HOLD_LEVEL = 350_000
     BREEDER_VALUE = 90
-    OVERRIDES = {}
+    OVERRIDES = {'Gorby' => [0, 0, 0],
+    		 'Mandelbrot' => [0, 0, 0],
+		 'Data' => [0, 0, 0],
+		 'LGM 4' => [0, 0, 0],
+		 'Kwaidan' => [0, 0, 0],
+		 }
 when "1"
     RACE = "Mercinary"
     FREIGHTER = "Large Freighter \\(2\\)"
@@ -233,13 +238,18 @@ class Planet
 	targets = mineral_targets(@res, newpop)
 
 	@mins.each_with_index do |v,i|
-	    v += @min_rate[i] * YEARS + @shipped_mins[i]
-	    @extra[i] = ((v - targets[i]) / UNIT.to_f).to_i  #trunc
-	    if @extra[i] == 0 && v < MIN_MINERALS
-		@extra[i] = -1
+	    # mins + mining + shipments
+	    cur = v + @min_rate[i] * YEARS + @shipped_mins[i]
+	    @extra[i] = ((cur - targets[i]) / UNIT.to_f).to_i  #trunc
+	    # make sure we will be above MIN_MINERALS after shipments and mining
+	    over = MIN_MINERALS - (cur - @extra[i] * UNIT)
+	    if over > 0
+	    	extra[i] -= (over / UNIT.to_f).ceil
 	    end
-	    if v - @extra[i] * UNIT < MIN_MINERALS
-		@extra[i] -= (MIN_MINERALS / UNIT.to_f).ceil
+	    # can't ship what we don't have
+	    over = 0 - (v - @extra[i] * UNIT)
+	    if over > 0
+	    	extra[i] -= (over / UNIT.to_f).ceil
 	    end
 	    if @extra[i] != 0
 		print "#{@name} #{MIN_NAME[i]} at #{v} want #{targets[i]} extra #{@extra[i]}\n"
