@@ -11,6 +11,8 @@ if true
     WARP = 100.0
     FACTS = 18
     FACT_COST = 4
+    POPMAX = 1100000
+    HOMEWORLD = {'Kirk' => 1, 'Sand Castle' => 1}
 else
     RACE = "Mercinary"
     FREIGHTER = "Large Freighter"
@@ -83,10 +85,12 @@ end
 class Planet
     attr_reader(:name, :owner, :res, :mins, :extra)
     attr_reader(:pos)
-    attr_accessor(:transports)
+    attr_accessor(:transports, :input_nodes, :output_nodes)
     def initialize(x, y)
 	@pos = Point.new(x, y)
-	@shipped_mins = [0,0,0]
+	@shipped_mins = [0,0,0,0]
+	@input_nodes = [0,0,0,0]
+	@output_nodes = [0,0,0,0]
 	@transports = 0
     end
     def planet_info(p)
@@ -106,10 +110,14 @@ class Planet
     end
     def shipped_mins(m)
 	m.each_with_index do |v,i|
-		@shipped_mins[i] += v
+	    @shipped_mins[i] += v
 	end
     end
     def calc_extra()
+	@extra = [0, 0, 0, 0]
+	if @pop < 1000
+	    return   # not tech trading planets
+	end
 	if @shipped_mins.max > 0
 	    print "#{@name} shipped #{@shipped_mins.join(', ')}\n"
 	end
@@ -120,7 +128,6 @@ class Planet
 	    print "#{@name} needs #{more_germ} more germ for factories\n"
 	    targets[2] += more_germ
 	end
-	@extra = []
 	@mins.each_with_index do |v,i|
 	    v += @min_rate[i] * YEARS + @shipped_mins[i]
 	    @extra[i] = ((v - targets[i]) / UNIT.to_f).to_i  #trunc
@@ -128,10 +135,22 @@ class Planet
 		@extra[i] = -1
 	    end
 	    if v - @extra[i] * UNIT < MIN_MINERALS
-		@extra[i] -= (MIN_MINERALS / UNIT).ceil
+		@extra[i] -= (MIN_MINERALS / UNIT.to_f).ceil
 	    end
 	    print "#{@name} #{i} at #{v} want #{targets[i]} extra #{@extra[i]}\n"
 	end
+	# handle population
+	extra[3] = 0
+	v = @pop + @shipped_mins[3]
+	plamax = @value * POPMAX / 100.0
+	if (@value < 40 || HOMEWORLD[@name]) && v < plamax
+	    extra[3] = ((v - plamax) / (100.0*UNIT)).to_i
+	elsif @value <= 95 && v < 400000
+	    extra[3] = ((v - 400000) / (100.0*UNIT)).to_i
+	elsif @value > 95
+	    extra[3] = ((v - 400000) / (100.0*UNIT)).to_i # trunc
+	end
+	print "#{@name} 3(#{@value}) at #{v} extra #{@extra[3]}\n"
     end
     def <=>(b)
 	self.name <=> b.name
@@ -178,7 +197,7 @@ parse_stars_file("Planet_info", GAME + ".p" + PLAYERNO.to_s) { |p|
 }
 parse_stars_file("Fleet_info", GAME + ".f" + PLAYERNO.to_s) { |p|
     if p.Task == "QuikDrop"
-	planets[p.Destination].shipped_mins([p.Iron, p.Bora, p.Germ].collect {|s| s.to_i})
+	planets[p.Destination].shipped_mins([p.Iron, p.Bora, p.Germ, p.Col].collect {|s| s.to_i})
     end
     if p.Fleet_Name =~ /^#{RACE} #{FREIGHTER}/ && 
 	    p.Destination == '-- ' && 
@@ -189,16 +208,16 @@ parse_stars_file("Fleet_info", GAME + ".f" + PLAYERNO.to_s) { |p|
 
 races[RACE].summary
 
-sum = [0, 0, 0]
+sum = [0, 0, 0, 0]
 source = {}
 needed = {}
-for i in 0..2 do
+for i in 0..3 do
 	source[i] = {}
 	needed[i] = {}
 end
 for p in races[RACE].planets do
     p.calc_extra
-    for min in 0..2 do
+    for min in 0..3 do
 	extra = p.extra[min]
 	if extra != 0
 	    if extra > 0
@@ -211,14 +230,14 @@ for p in races[RACE].planets do
     end
 end
 
-for min in 0..2 do
+for min in 0..3 do
     print "total #{min} #{sum[min]}\n"
 end
 print "done\n"
 
 
 ship = {}
-for min in 0..2 do
+for min in 0..3 do
     if source[min].values.sum > needed[min].values.sum
 	s = needed[min]
 	n = source[min]
@@ -287,7 +306,7 @@ for min in 0..2 do
     end
 end
 
-min_name = ['iron', 'boron', 'germ']
+min_name = ['iron', 'boron', 'germ', 'col']
 
 extra_freighters = 0
 total_trips = 0
