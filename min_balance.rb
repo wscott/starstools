@@ -166,7 +166,7 @@ class Planet
 	@pop + @shipped_mins[3] * 100
     end
     def maxpop
-	@value * POPMAX / 100.0
+	[@value * POPMAX / 100.0, POPMAX/20].max
     end
     def extra
 	return @extra if @extra
@@ -203,7 +203,7 @@ class Planet
 	# people arrive
 	more_germ = (newpop/10000 * FACTS - @factories) * FACT_COST
 	if more_germ > 0
-	    print "#{@name} needs #{more_germ} more germ for factories\n"
+	    print "#{@name} needs #{more_germ} extra germ to finish factories\n"
 	    targets[2] += more_germ
 	end
 	@mins.each_with_index do |v,i|
