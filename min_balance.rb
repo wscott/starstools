@@ -8,16 +8,20 @@ if true
     RACE = "Bird"
     FREIGHTER = "Fast Shipper"
     PLAYERNO = 2
-    WARP = 100.0
     FACTS = 18
     FACT_COST = 4
     POPMAX = 1100000
     HOMEWORLD = {'Kirk' => 1, 'Sand Castle' => 1}
+    FUN = [0,0,10,30,40,50,60,70,80,90,100]
 else
     RACE = "Mercinary"
-    FREIGHTER = "Large Freighter"
+    FREIGHTER = "Large Freighter \\(2\\)"
     PLAYERNO = 1
-    WARP = 81.0
+    FACTS = 25
+    FACT_COST = 3
+    POPMAX = 1100000
+    HOMEWORLD = {'Salsa' => 1}
+    FUN = [0,0,0,0,0,0,0,0,0,70,84]
 end
 
 module Enumerable
@@ -83,15 +87,15 @@ class Race
 end
 
 class Planet
-    attr_reader(:name, :owner, :res, :mins, :extra)
+    attr_reader(:name, :owner, :res, :mins, :extra, :gaterange)
     attr_reader(:pos)
-    attr_accessor(:transports, :input_nodes, :output_nodes)
+    attr_accessor(:input_nodes, :output_nodes, :node)
+    protected(:gaterange, :pos)
     def initialize(x, y)
 	@pos = Point.new(x, y)
 	@shipped_mins = [0,0,0,0]
-	@input_nodes = [0,0,0,0]
-	@output_nodes = [0,0,0,0]
-	@transports = 0
+	@input_nodes = []
+	@output_nodes = []
     end
     def planet_info(p)
 	@name = p.Planet_Name
@@ -107,6 +111,7 @@ class Planet
 	@min_rate = p.values[i..i+2].collect {|n| n.to_i}
 	@owner.new_planet(self)
 	@factories = p.Factories.to_i
+	@gaterange = p.GateRange.to_i
     end
     def shipped_mins(m)
 	m.each_with_index do |v,i|
@@ -155,6 +160,96 @@ class Planet
     def <=>(b)
 	self.name <=> b.name
     end
+    def dist(p, loaded)
+	dist = @pos - p.pos
+	mass = 209 + 1200 * loaded
+	if loaded == 0 && dist < @gaterange && dist < p.gaterange
+	    1
+	else
+	    warp = 10
+	    while warp > 0
+		rtime = (dist / warp**2).ceil
+		f = FUN[warp] * (dist/rtime).ceil / 200
+		fuel = (mass * f + 9)/100 * rtime;
+		break if 0.85 * fuel < 2600  # IFE
+		warp -= 1
+	    end
+	    rtime
+	end
+    end
+end
+
+class Transport
+    attr_reader(:cnt, :dest, :eta)
+    attr_accessor(:node)
+    def initialize(cnt, dest, eta)
+	@cnt = cnt
+	@dest = dest
+	@eta = eta
+    end
+end
+
+class Node
+    attr_reader(:type, :data, :min, :link)
+    protected(:link)
+    @@nextnode = 1
+    @@nodes = []
+    def Node.num_nodes
+	@@nextnode - 1
+    end
+    def Node.lookup(num)
+	@@nodes[num]
+    end
+    def initialize(type, data=nil, min=nil)
+	@type = type
+	@data = data
+	@min = min
+	@node = @@nextnode
+	@link = []
+	@@nextnode += 1
+	@@nodes[@node] = self
+    end
+    def to_int
+	@node
+    end
+    def addlink(amm, to)
+	@link.push([amm, to])
+    end
+    def walk(off)
+	case @type
+	when "ship"
+	    print @type
+	when "planet"
+	    print "planet #{@data.name}"
+	when "input", "output"
+	    print "#{@type} #{@data.name} #{@min}"
+	when "done"
+	    print "done\n"
+	    return
+	end
+	print "\n"
+	off += "\t"
+	@link.each do |n|
+	    print "#{off}#{n[0]} "
+	    n[1].walk(off)
+	end
+    end
+    def findpath
+	ret = []
+	n = self
+	while n.link.size > 0
+	    e = n.link[0]
+	    e[1]
+	    ret.push(e[1])
+	    if e[0] == 1
+		n.link.shift
+	    else 
+		e[0] -= 1
+	    end
+	    n = e[1]
+	end
+	ret
+    end
 end
 
 def parse_stars_file(structname, filename)
@@ -181,172 +276,208 @@ def parse_stars_file(structname, filename)
 end
     
 planets = {}
-parse_stars_file("Map", GAME + ".map") { |p|
+ships = []
+parse_stars_file("Map", GAME + ".map") do |p|
     pla = Planet.new(p.X, p.Y)
     planets[p.Name] = pla
-}
+end
 
 races = Hash.new
 
-parse_stars_file("Planet_info", GAME + ".p" + PLAYERNO.to_s) { |p|
+parse_stars_file("Planet_info", GAME + ".p" + PLAYERNO.to_s) do |p|
     if !races.has_key? p.Owner
 	races[p.Owner] = Race.new(p.Owner)
     end
     p.Owner = races[p.Owner]
     planets[p.Planet_Name].planet_info(p)
-}
-parse_stars_file("Fleet_info", GAME + ".f" + PLAYERNO.to_s) { |p|
-    if p.Task == "QuikDrop"
-	planets[p.Destination].shipped_mins([p.Iron, p.Bora, p.Germ, p.Col].collect {|s| s.to_i})
+end
+
+parse_stars_file("Fleet_info", GAME + ".f" + PLAYERNO.to_s) do |p|
+    pla = planets[p.Planet]
+    dest = planets[p.Destination]
+    pla = nil if pla && pla.owner.name != RACE
+    dest = nil if dest && dest.owner.name != RACE
+    
+    if dest && p.Task == "QuikDrop"
+	dest.shipped_mins([p.Iron, p.Bora, p.Germ, p.Col].collect {|s| s.to_i})
     end
-    if p.Fleet_Name =~ /^#{RACE} #{FREIGHTER}/ && 
-	    p.Destination == '-- ' && 
-	    p.Task == "(no task here)"
-	planets[p.Planet].transports += p.Unarmed.to_i
+    if p.Fleet_Name =~ /^#{RACE} #{FREIGHTER}/
+	if pla && p.Destination == '-- ' && p.Task == "(no task here)"
+	    ships.push(Transport.new(p.Unarmed.to_i, pla, 0));
+	elsif dest != nil
+	    print "ETA #{p.ETA}\n"
+	    ships.push(Transport.new(p.Unarmed.to_i, dest, p.ETA.to_i))
+	else
+	    print "#{p.inspect}\n"
+	end
     end
-}
+end
+num_ships = ships.map {|s| s.cnt }.sum
 
 races[RACE].summary
 
-sum = [0, 0, 0, 0]
-source = {}
-needed = {}
-for i in 0..3 do
-	source[i] = {}
-	needed[i] = {}
+done_node = Node.new("done")
+
+network = File.open("network.dmx.x", "w");
+# node 1 is output node
+arcs = 0
+
+network.printf("n 1 -%d\n", num_ships)
+
+# add nodes for incoming transports
+for s in ships do
+    s.node = Node.new('ship', s)
+    network.printf("n %d %d\n",
+		   s.node, s.cnt);
 end
+
+# assign planets nodes
+races[RACE].planets.each do |p|
+    p.node = Node.new("planet", p)
+end
+
+# connect transports to planets
+ships.each do |s|
+    network.printf("a %d %d 0 %d %d\n", s.node, s.dest.node, s.cnt, s.eta)
+    arcs += 1
+end
+
+# add graph for empty transports
+for s in races[RACE].planets do
+    for n in races[RACE].planets do 
+	next if s == n;
+
+	network.printf("a %d %d 0 %d %d\n",
+		       s.node, n.node,
+		       num_ships,
+		       s.dist(n, 0))
+	arcs += 1
+    end
+end
+	
+plasource = [0, 0, 0, 0]
+planeeded = [0, 0, 0, 0]
+sumsource = [0, 0, 0, 0]
+sumneeded = [0, 0, 0, 0]
+source = []
+needed = []
+for i in 0..3 do
+	source[i] = []
+	needed[i] = []
+end
+# add supply and needed nodes
 for p in races[RACE].planets do
     p.calc_extra
     for min in 0..3 do
 	extra = p.extra[min]
 	if extra != 0
 	    if extra > 0
-		source[min][p] = extra
+		source[min].push(p)
+		p.input_nodes[min] = Node.new('input', p, min)
+		network.printf("a %d %d 0 %d 0\n", 
+			       p.node, p.input_nodes[min], extra)
+		arcs += 1
+		plasource[min] += 1
+		sumsource[min] += extra
 	    else
-		needed[min][p] = -extra
+		needed[min].push(p)
+		p.output_nodes[min] = Node.new('output', p, min)
+		network.printf("a %d 1 0 %d 0\n", p.output_nodes[min], -extra)
+		arcs += 1
+		planeeded[min] += 1
+		sumneeded[min] += -extra
 	    end
-	    sum[min] += extra
 	end
     end
 end
 
+# connect supply and needed nodes
 for min in 0..3 do
-    print "total #{min} #{sum[min]}\n"
+    for s in source[min] do
+	for n in needed[min] do
+	    network.printf("a %d %d 0 %d %d\n",
+			   s.input_nodes[min],
+			   n.output_nodes[min],
+			   num_ships,
+			   s.dist(n, 1))
+	    arcs += 1
+	end
+    end
 end
-print "done\n"
+source = needed = nil
 
+print "---------\n"
+print "Num ships = #{num_ships}\n"
+print "Planets supply = #{plasource.join(%Q(\t))} = #{plasource.sum}\n"
+print "Total   supply = #{sumsource.join(%Q(\t))} = #{sumsource.sum}\n"
+print "Planets needed = #{planeeded.join(%Q(\t))} = #{planeeded.sum}\n"
+print "Total   needed = #{sumneeded.join(%Q(\t))} = #{sumneeded.sum}\n"
 
-ship = {}
-for min in 0..3 do
-    if source[min].values.sum > needed[min].values.sum
-	s = needed[min]
-	n = source[min]
-	rev = 1
-    else
-	s = source[min]
-	n = needed[min]
-	rev = 0
-    end
+network.close
+network = File.open("network.dmx", "w");
+network.print "p min #{Node.num_nodes} #{arcs}\n"
+File.open("network.dmx.x", "r") do |i|
+    network.write(i.read)
+end
+network.close
+File.unlink("network.dmx.x")
 
-    # compute distance array
-    dist = {}
-    for sp in s.keys do
-	dist[sp] = {}
-	for np in n.keys do
-	    dist[sp][np] = ((sp.pos - np.pos)/WARP).ceil
-	end
-    end
-    while s.size > 0
-	# find the source planet with the largest min distance
-	max_min = 0
-	for sp in s.keys do
-	    dmin = 1e6
-	    for np in n.keys do
-		d = dist[sp][np]
-		# if you do not have any ships it will take an extra year
-		if (rev==0 ? sp : np).transports <= 0
-		    d += 1
-		end
-		if d < dmin
-		    dmin = d
-		    dp = np
-		end
-	    end
-	    if dmin > max_min 
-		max_min = dmin
-		from = sp
-		to = dp
-	    end
-	end
-	if rev == 1
-	    src = to
-	    dest = from
-	else
-	    src = from
-	    dest = to
-	end
-	amount = [s[from], n[to]].min
-	if src.transports > 0 && src.transports < amount
-	    amount = src.transports
-	end
-	s[from] -= amount
-	n[to] -= amount
-	if s[from] == 0 
-	    s.delete(from)
-	end
-	if n[to] == 0
-	    n.delete(to)
-	end
-	trans = [amount, src.transports].min
-	src.transports -= trans
+system("mcf -o -v -q -w network.out ./network.dmx")
 
-	ship[src] ||= {}
-	ship[src][dest] ||= []
-	ship[src][dest].push([min, amount, trans, max_min])
+File.open("network.out", "r").each do |$_|
+    if /^f (\d+) (\d+) (\d+)/
+	from, to, amm = Node.lookup($1.to_i), Node.lookup($2.to_i), $3.to_i
+
+	from.addlink(amm, to)
     end
 end
 
 min_name = ['iron', 'boron', 'germ', 'col']
 
-extra_freighters = 0
-total_trips = 0
-total_length = 0
-for from in ship.keys.sort do
-    print "Ship from #{from.name}:\n"
-    tot_trans = 0
-    ship[from].values.each {|a1| a1.each {|a2| tot_trans += a2[2]}}
-    if tot_trans > 0
-	print "    #{tot_trans} transports waiting\n"
-    end    
-    for to in ship[from].keys.sort do
-	for e in ship[from][to] do
-	    min, amount, trans, max_min = *e
-	    print "\t#{to.name} "
-	    y = max_min
-	    total_trips += amount
-	    total_length += y
-	    if trans > 0
-		print "(#{y}) "
+ship = {}
+ships.each do |s|
+#   if s.eta == 0
+#	s.node.walk('')
+#   end
+    s.cnt.times do
+	path = s.node.findpath
+	if s.eta == 0 && path.size > 1
+	    from = s.dest
+	    ship[from] ||= {}
+	    
+	    case path[1].type 
+	    when 'input'
+		to = path[2].data
+		min = path[2].min
+#		print "from #{from} to #{to} #{UNIT} #{min_name[min]}\n"
+		ship[from][to] ||= Hash.new(0)
+		ship[from][to][min] += 1 
+	    when 'planet'
+		to = path[1].data
+		ship[from][to] ||= Hash.new(0)
+		ship[from][to][4] += 1 
+#		print "move 1 from #{from} to #{to}\n"
 	    else
-		print "(#{y-1}+1) "
-		extra_freighters += amount 
+		puts path[1].type
+		raise
 	    end
-	    print "#{amount.*UNIT}kT #{min_name[min]}\n"
 	end
     end
 end
-printf "\nShip %d freighters for an average length of %.1f years\n",
-    total_trips, total_length/total_trips.to_f
-
-print "\nPlanets with unused freighters:\n"
-for p in races[RACE].planets.sort do
-    if p.transports > 0
-	print "\t#{p.transports} #{p.name}\n"
-	extra_freighters -= p.transports
+    
+print "done\n"
+	    
+for from in ship.keys.sort do
+    print "Ship from #{from.name}:\n"
+    for to in ship[from].keys.sort do
+	for min in ship[from][to].keys.sort do
+	    cnt = ship[from][to][min]
+	    print "\t#{to.name}"
+	    if min == 4
+		print "(#{from.dist(to,0)}) #{cnt} ships\n"
+	    else 
+		print "(#{from.dist(to,1)}) #{cnt.*UNIT}kT #{min_name[min]}\n"
+	    end
+	end
     end
 end
-
-if extra_freighters > 0 then
-    print "\nNumber of addition frieghters needed: #{extra_freighters}\n"
-end
-
