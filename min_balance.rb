@@ -163,7 +163,7 @@ class Planet
 	end
     end
     def pop
-	@pop + @shipped_mins[3]
+	@pop + @shipped_mins[3] * 100
     end
     def maxpop
 	@value * POPMAX / 100.0
@@ -182,13 +182,14 @@ class Planet
 	    # when filling a planet allow a 1/2 a freighter overcommit
 	    # so the planet gets closer to full.  We could get completely
 	    # full, but these a freighter might be almost empty
-	    target = maxpop + 50 * UNIT   
+	    target = maxpop
+	    target += 50 * UNIT if pop < target
 	else 
 	    target = MIN_HOLD_LEVEL
 	end
 	extra[3] = ((pop - target) / (100.0*UNIT)).to_i
 	# only export from breeders
-	if extra[3] > 0 && @value < BREEDER_VALUE
+	if extra[3] > 0 && @value < BREEDER_VALUE && pop < maxpop
 	    extra[3] = 0
 	end
 	newpop = pop
