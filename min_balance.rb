@@ -21,7 +21,8 @@ HOMEWORLD = {
     'Libra' => 1,	# Romans
     'Omega' => 1,	# Speedbumps :(
 }
-if true
+case ARGV[0]
+when "2"
     RACE = "Bird"
     FREIGHTER = "Fast Shipper"
     PLAYERNO = 2
@@ -35,7 +36,7 @@ if true
     MAX_POP_VALUE = 70
     MIN_HOLD_LEVEL = 350_000
     BREEDER_VALUE = 90
-else
+when "1"
     RACE = "Mercinary"
     FREIGHTER = "Large Freighter \\(2\\)"
 #    FREIGHTER = "Large Freighter"
@@ -50,6 +51,9 @@ else
     MAX_POP_VALUE = 50
     MIN_HOLD_LEVEL = 350_000
     BREEDER_VALUE = 90
+else
+    print "Race #{ARGV[0]} not handled\n"
+    exit 1
 end
 
 module Enumerable
@@ -154,10 +158,27 @@ class Planet
 	if @shipped_mins.max > 0
 	    print "#{@name} shipped #{@shipped_mins.join(', ')}\n"
 	end
+	# handle population
+	extra[3] = 0
+	pop = @pop + @shipped_mins[3]
+	plamax = @value * POPMAX / 100.0
+	if (@value < MAX_POP_VALUE || HOMEWORLD[@name]) && pop < plamax
+	    extra[3] = ((pop - plamax) / (100.0*UNIT)).to_i
+	elsif @value < BREEDER_VALUE && pop < MIN_HOLD_LEVEL
+	    extra[3] = ((pop - MIN_HOLD_LEVEL) / (100.0*UNIT)).to_i
+	elsif @value >= BREEDER_VALUE
+	    extra[3] = ((pop - MIN_HOLD_LEVEL) / (100.0*UNIT)).to_i # trunc
+	end
+	newpop = pop
+	if extra[3] < 0
+	    newpop -=  extra[3] * 100 * UNIT
+	end
 	targets = @owner.mineral_targets(@res)
-	if @factories < @pop/10000 * FACTS 
-	    # need more germ for factories
-	    more_germ = (@pop/10000 * FACTS - @factories) * FACT_COST
+
+	# account for extra germ to build new factories, assuming new 
+	# people arrive
+	more_germ = (newpop/10000 * FACTS - @factories) * FACT_COST
+	if more_germ > 0
 	    print "#{@name} needs #{more_germ} more germ for factories\n"
 	    targets[2] += more_germ
 	end
@@ -172,18 +193,7 @@ class Planet
 	    end
 	    print "#{@name} #{i} at #{v} want #{targets[i]} extra #{@extra[i]}\n"
 	end
-	# handle population
-	extra[3] = 0
-	v = @pop + @shipped_mins[3]
-	plamax = @value * POPMAX / 100.0
-	if (@value < MAX_POP_VALUE || HOMEWORLD[@name]) && v < plamax
-	    extra[3] = ((v - plamax) / (100.0*UNIT)).to_i
-	elsif @value < BREEDER_VALUE && v < MIN_HOLD_LEVEL
-	    extra[3] = ((v - MIN_HOLD_LEVEL) / (100.0*UNIT)).to_i
-	elsif @value >= BREEDER_VALUE
-	    extra[3] = ((v - MIN_HOLD_LEVEL) / (100.0*UNIT)).to_i # trunc
-	end
-	print "#{@name} 3(#{@value}) at #{v} extra #{@extra[3]}\n"
+	print "#{@name} 3(#{@value}) at #{pop} extra #{@extra[3]}\n"
     end
     def <=>(b)
 	self.name <=> b.name
@@ -394,7 +404,7 @@ for i in 0..3 do
 	needed[i] = []
 end
 # add supply and needed nodes
-for p in races[RACE].planets do
+for p in races[RACE].planets.sort do
     p.calc_extra
     for min in 0..3 do
 	extra = p.extra[min]
@@ -450,7 +460,7 @@ end
 network.close
 File.unlink("network.dmx.x")
 File.unlink("network.out") if File.file?("network.out")
-system("mcf -o -v -q -w network.out ./network.dmx")
+system("./mcf -o -v -q -w network.out ./network.dmx") || raise
 
 File.open("network.out", "r").each do |$_|
     if /^f (\d+) (\d+) (\d+)/
