@@ -1,0 +1,46 @@
+UNIT = 1200                     # minerals in one loaded freighter
+MIN_MINERALS = 200              # min minerals to leave on any planet
+YEARS = 3
+GAME = "/home/wscott/stars/drknrg"
+HOMEWORLD = {
+    'Kirk' => 1,        # Birds
+    'Sand Castle' => 1, # Zedd :)
+    'Salsa' => 1,       # Mercinary
+    'Mamie' => 1,       # Fermi
+    'Simple' => 1,      # Geovirus :(
+    'Timbuktu' => 1,    # Engineers
+    'Bakwele' => 1,     # Randoms
+    'Libra' => 1,       # Romans
+    'Omega' => 1,       # Speedbumps :(
+}
+
+    RACE = "Bird"
+    FREIGHTER = "Fast Shipper"
+    PLAYERNO = 2
+    FACTS = 18			# Number of factories operated
+    FACT_COST = 4		# cost in Germ per factory
+    POPMAX = 1100000		# max population on 100% world
+    FUELEFF = 0.85  # IFE	# 1 for no-IFE
+
+    # Fuel efficiency numbers from Stars! spreadsheet
+    FUN = [0,0,10,30,40,50,60,70,80,90,100]
+    FREIGHTER_MASS = 207	# mass of empty freighter
+    FREIGHTER_FUEL = 2600
+    MAX_POP_VALUE = 85
+    MIN_HOLD_LEVEL = 350_000
+    BREEDER_VALUE = 90
+     OVERRIDES = {'Gorby' => [0, 0, 0],
+                 'Mandelbrot' => [0, 0, 0],
+                 'Data' => [0, 0, 0],
+                 'LGM 4' => [0, 0, 0],
+                 'Kwaidan' => [0, 0, 0],
+                 }
+
+def user_adjust(race)
+    race.planets.sort.each do |p|
+        if p.value < 70
+            print "#{p.name} is now a mining planet\n"
+            OVERRIDES[p.name] = [0,0,0]
+        end
+    end
+end

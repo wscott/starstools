@@ -1,0 +1,41 @@
+UNIT = 1200                     # minerals in one loaded freighter
+MIN_MINERALS = 200              # min minerals to leave on any planet
+YEARS = 3
+GAME = "drknrg"
+HOMEWORLD = {
+    'Kirk' => 1,        # Birds
+    'Sand Castle' => 1, # Zedd :)
+    'Salsa' => 1,       # Mercinary
+    'Mamie' => 1,       # Fermi
+    'Simple' => 1,      # Geovirus :(
+    'Timbuktu' => 1,    # Engineers
+    'Bakwele' => 1,     # Randoms
+    'Libra' => 1,       # Romans
+    'Omega' => 1,       # Speedbumps :(
+}
+
+
+    RACE = "Mercinary"
+    FREIGHTER = "Large Freighter \\(2\\)"
+#    FREIGHTER = "Large Freighter"
+    PLAYERNO = 1
+    FACTS = 25
+    FACT_COST = 3
+    POPMAX = 1100000
+    FUELEFF = 0.85
+    FUN = [0,0,0,0,0,0,0,0,0,70,84]
+    FREIGHTER_MASS = 183
+    FREIGHTER_FUEL = 2600
+    MAX_POP_VALUE = 70
+    MIN_HOLD_LEVEL = 350_000
+    BREEDER_VALUE = 90
+    OVERRIDES = {}
+
+def user_adjust(race)
+    race.planets.each do |p|
+	if p.value < 70
+	    print "#{p.name} is now a mining planet\n"
+	    OVERRIDES[p.name] = [0,0,0]
+	end
+    end
+end

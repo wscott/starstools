@@ -1,4 +1,5 @@
 #!/usr/bin/ruby -w
+$HOME = File.dirname(File.expand_path($0))
 
 # %Z%%K%
 
@@ -23,6 +24,7 @@
 # people
 
 load ARGV[0]
+$OUTDIR = File.dirname(ARGV[0])
 
 MIN_NAME = ['iron', 'boron', 'germ', 'col']
 
@@ -329,7 +331,13 @@ def parse_stars_file(structname, filename)
 end
 
 def filecase(f)
-    Dir.open(".").detect {|e| e.downcase == f.downcase }
+    print "f = #{f}\n"
+    dir, base = *File.split(f)
+    file = Dir.open(dir).detect {|e| e.downcase == base.downcase }
+    if file.nil?
+	raise "Unable to open file #{f}\n"
+    end
+    File.join(dir, file)
 end
 
     
@@ -375,7 +383,8 @@ races[RACE].summary
 
 done_node = Node.new("done")
 
-network = File.open("network.dmx.x", "w");
+netfile = File.join($OUTDIR, "network");
+network = File.open("#{netfile}.dmx.x", "w");
 # node 1 is output node
 arcs = 0
 
@@ -474,17 +483,19 @@ print "Planets needed\t= #{planeeded.join(%Q(\t))}\t= #{planeeded.sum}\n"
 print "Total   needed\t= #{sumneeded.join(%Q(\t))}\t= #{sumneeded.sum}\n"
 
 network.close
-network = File.open("network.dmx", "w");
+network = File.open("#{netfile}.dmx", "w");
 network.print "p min #{Node.num_nodes} #{arcs}\n"
-File.open("network.dmx.x", "r") do |i|
+File.open("#{netfile}.dmx.x", "r") do |i|
     network.write(i.read)
 end
 network.close
-File.unlink("network.dmx.x")
-File.unlink("network.out") if File.file?("network.out")
-system("./mcf -o -v -q -w network.out ./network.dmx") || raise
+File.unlink("#{netfile}.dmx.x")
+File.unlink("#{netfile}.out") if File.file?("#{netfile}.out")
+unless system("#{$HOME}/mcf -o -v -q -w #{netfile}.out #{netfile}.dmx") 
+    raise "Can't run #{$HOME}/mcf\n"
+end
 
-File.open("network.out", "r").each do |$_|
+File.open("#{netfile}.out", "r").each do |$_|
     if /^f (\d+) (\d+) (\d+)/
 	from, to, amm = Node.lookup($1.to_i), Node.lookup($2.to_i), $3.to_i
 
