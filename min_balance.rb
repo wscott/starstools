@@ -244,7 +244,17 @@ for min in 0..2 do
 		to = dp
 	    end
 	end
+	if rev == 1
+	    src = to
+	    dest = from
+	else
+	    src = from
+	    dest = to
+	end
 	amount = [s[from], n[to]].min
+	if src.transports > 0 && src.transports < amount
+	    amount = src.transports
+	end
 	s[from] -= amount
 	n[to] -= amount
 	if s[from] == 0 
@@ -253,17 +263,12 @@ for min in 0..2 do
 	if n[to] == 0
 	    n.delete(to)
 	end
-	if rev == 1 
-	    t = from
-	    from = to
-	    to = t
-	end
-	trans = [amount / UNIT, from.transports].min
-	from.transports -= trans
+	trans = [amount, src.transports].min
+	src.transports -= trans
 
-	ship[from] ||= {}
-	ship[from][to] ||= {}
-	ship[from][to][min] = [amount, trans, max_min]
+	ship[src] ||= {}
+	ship[src][dest] ||= []
+	ship[src][dest].push([min, amount, trans, max_min])
     end
 end
 
@@ -271,18 +276,26 @@ min_name = ['iron', 'boron', 'germ']
 
 for from in ship.keys.sort do
     print "Ship from #{from.name}:\n"
+    tot_trans = 0
+    ship[from].values.each {|a1| a1.each {|a2| tot_trans += a2[2]}}
+    if tot_trans > 0
+	print "    #{tot_trans} transports waiting\n"
+    end    
     for to in ship[from].keys.sort do
-	print "\t#{to.name} "
-	for min in ship[from][to].keys.sort do
-	    amount, trans, max_min = *ship[from][to][min]
-	    print "#{amount.*UNIT}kT #{min_name[min]} "
+	for e in ship[from][to] do
+	    min, amount, trans, max_min = *e
+	    print "\t#{to.name} "
+	    y = (max_min / 100.0).ceil
+	    if trans > 0
+		print "(#{y}) "
+	    else
+		print "(#{y-1}+1) "
+	    end
+	    print "#{amount.*UNIT}kT #{min_name[min]}\n"
 	end
-	if trans > 0
-	    print " * "
-	end
-	print "#{(max_min / 100.0).ceil} years\n"
     end
 end
+
 
 
 
