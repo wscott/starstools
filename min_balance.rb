@@ -2,11 +2,19 @@
 
 UNIT = 1200
 MIN_MINERALS = 200
-RACE = "Bird"
-FREIGHTER = "Fast Shipper"
-YEARS = 5
+YEARS = 3
 GAME = "drknrg"
-PLAYERNO = 2
+if true
+    RACE = "Bird"
+    FREIGHTER = "Fast Shipper"
+    PLAYERNO = 2
+    WARP = 100.0
+else
+    RACE = "Mercinary"
+    FREIGHTER = "Large Freighter"
+    PLAYERNO = 1
+    WARP = 81.0
+end
 
 module Enumerable
     # inject(n) { |n, i| ...}
@@ -71,7 +79,7 @@ class Race
 end
 
 class Planet
-    attr_reader(:name, :owner, :pop, :value, :res, :mines, :fact, :mins, :extra)
+    attr_reader(:name, :owner, :pop, :value, :res, :mins, :extra)
     attr_reader(:pos)
     attr_accessor(:transports)
     def initialize(x, y)
@@ -87,8 +95,6 @@ class Planet
 	    @value = p.Value.sub('%', '').to_i
 	end
 	@res = p.Resources.to_i
-	@mines = p.Mines.to_i
-	@fact = p.Factories.to_i
 	i = p.members.index("S_Iron")
 	@mins = p.values[i..i+2].collect {|n| n.to_i}
 	i = p.members.index("Iron_MR")
@@ -100,21 +106,22 @@ class Planet
 		@shipped_mins[i] += v
 	end
     end
-    def fleets(p)
-	@transports += p
-    end
     def calc_extra()
+	if @shipped_mins.max > 0
+	    print "#{@name} shipped #{@shipped_mins.join(', ')}\n"
+	end
 	targets = @owner.mineral_targets(@res)
 	@extra = []
 	@mins.each_with_index do |v,i|
 	    v += @min_rate[i] * YEARS + @shipped_mins[i]
-	    @extra[i] = ((v - targets[i]) / UNIT.to_f).floor
+	    @extra[i] = ((v - targets[i]) / UNIT.to_f).to_i  #trunc
 	    if @extra[i] == 0 && v < MIN_MINERALS
 		@extra[i] = -1
 	    end
-	end
-	if @shipped_mins.max > 0
-	    print "#{@name} shipped #{@shipped_mins.join(', ')}\n"
+	    if v - @extra[i] * UNIT < MIN_MINERALS
+		@extra[i] -= (MIN_MINERALS / UNIT).ceil
+	    end
+	    print "#{@name} #{i} at #{v} want #{targets[i]} extra #{@extra[i]}\n"
 	end
     end
     def <=>(b)
@@ -167,7 +174,7 @@ parse_stars_file("Fleet_info", GAME + ".f" + PLAYERNO.to_s) { |p|
     if p.Fleet_Name =~ /^#{RACE} #{FREIGHTER}/ && 
 	    p.Destination == '-- ' && 
 	    p.Task == "(no task here)"
-	planets[p.Planet].fleets(p.Ship_Cnt.to_i)
+	planets[p.Planet].transports += p.Unarmed.to_i
     end
 }
 
@@ -190,7 +197,6 @@ for p in races[RACE].planets do
 	    else
 		needed[min][p] = -extra
 	    end
-	    print "#{p.name} #{min} #{extra}\n"
 	    sum[min] += extra
 	end
     end
@@ -219,7 +225,7 @@ for min in 0..2 do
     for sp in s.keys do
 	dist[sp] = {}
 	for np in n.keys do
-	    dist[sp][np] = ((sp.pos - np.pos))
+	    dist[sp][np] = ((sp.pos - np.pos)/WARP).ceil
 	end
     end
     while s.size > 0
@@ -231,7 +237,7 @@ for min in 0..2 do
 		d = dist[sp][np]
 		# if you do not have any ships it will take an extra year
 		if (rev==0 ? sp : np).transports <= 0
-		    d += 100
+		    d += 1
 		end
 		if d < dmin
 		    dmin = d
@@ -274,6 +280,9 @@ end
 
 min_name = ['iron', 'boron', 'germ']
 
+extra_freighters = 0
+total_trips = 0
+total_length = 0
 for from in ship.keys.sort do
     print "Ship from #{from.name}:\n"
     tot_trans = 0
@@ -285,17 +294,31 @@ for from in ship.keys.sort do
 	for e in ship[from][to] do
 	    min, amount, trans, max_min = *e
 	    print "\t#{to.name} "
-	    y = (max_min / 100.0).ceil
+	    y = max_min
+	    total_trips += amount
+	    total_length += y
 	    if trans > 0
 		print "(#{y}) "
 	    else
 		print "(#{y-1}+1) "
+		extra_freighters += amount 
 	    end
 	    print "#{amount.*UNIT}kT #{min_name[min]}\n"
 	end
     end
 end
+printf "\nShip %d freighters for an average length of %.1f years\n",
+    total_trips, total_length/total_trips.to_f
 
+print "\nPlanets with unused freighters:\n"
+for p in races[RACE].planets.sort do
+    if p.transports > 0
+	print "\t#{p.transports} #{p.name}\n"
+	extra_freighters -= p.transports
+    end
+end
 
-
+if extra_freighters > 0 then
+    print "\nNumber of addition frieghters needed: #{extra_freighters}\n"
+end
 
