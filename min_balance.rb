@@ -8,21 +8,6 @@
 #  execptions for min and pop targets for some planets
 #  fix hardcoded transport info
 
-UNIT = 1200			# minerals in one loaded freighter
-MIN_MINERALS = 200		# min minerals to leave on any planet
-YEARS = 3
-GAME = "drknrg"
-HOMEWORLD = {
-    'Kirk' => 1,	# Birds
-    'Sand Castle' => 1, # Zedd :)
-    'Salsa' => 1,	# Mercinary
-    'Mamie' => 1,	# Fermi
-    'Simple' => 1,	# Geovirus :(
-    'Timbuktu' => 1,	# Engineers
-    'Bakwele' => 1,	# Randoms
-    'Libra' => 1,	# Romans
-    'Omega' => 1,	# Speedbumps :(
-}
 
 # configuration parameters
 # 
@@ -37,49 +22,7 @@ HOMEWORLD = {
 # if loading a freighter will still leave the planet over MIN_HOLD_LEVEL 
 # people
 
-case ARGV[0]
-when "2"
-    RACE = "Bird"
-    FREIGHTER = "Fast Shipper"
-    PLAYERNO = 2
-    FACTS = 18			# Number of factories operated
-    FACT_COST = 4		# cost in Germ per factory
-    POPMAX = 1100000		# max population on 100% world
-    FUELEFF = 0.85  # IFE	# 1 for no-IFE
-
-    # Fuel efficiency numbers from Stars! spreadsheet
-    FUN = [0,0,10,30,40,50,60,70,80,90,100]
-    FREIGHTER_MASS = 209	# mass of empty freighter
-    FREIGHTER_FUEL = 2600
-    MAX_POP_VALUE = 70
-    MIN_HOLD_LEVEL = 350_000
-    BREEDER_VALUE = 90
-    OVERRIDES = {'Gorby' => [0, 0, 0],
-    		 'Mandelbrot' => [0, 0, 0],
-		 'Data' => [0, 0, 0],
-		 'LGM 4' => [0, 0, 0],
-		 'Kwaidan' => [0, 0, 0],
-		 }
-when "1"
-    RACE = "Mercinary"
-    FREIGHTER = "Large Freighter \\(2\\)"
-#    FREIGHTER = "Large Freighter"
-    PLAYERNO = 1
-    FACTS = 25
-    FACT_COST = 3
-    POPMAX = 1100000
-    FUELEFF = 0.85
-    FUN = [0,0,0,0,0,0,0,0,0,70,84]
-    FREIGHTER_MASS = 183
-    FREIGHTER_FUEL = 2600
-    MAX_POP_VALUE = 70
-    MIN_HOLD_LEVEL = 350_000
-    BREEDER_VALUE = 90
-    OVERRIDES = {'Arnold' => [nil, nil, 0]}
-else
-    print "Race #{ARGV[0]} not handled\n"
-    exit 1
-end
+load ARGV[0]
 
 MIN_NAME = ['iron', 'boron', 'germ', 'col']
 
@@ -141,12 +84,20 @@ class Race
 	print "-----------------\n"
     end	
     def mineral_targets(res)
-	@tot_min.map{|n| (n * (res.to_f / @tot_res)).floor}
+	real_res = @tot_res
+	real_min = @tot_min
+	OVERRIDES.each do |name,a|
+	    real_res -= Planet.lookup(name).res
+	    a.each_with_index do |v,i|
+		real_min[i] -= v
+	    end
+	end
+	real_min.map{|n| (n * (res.to_f / real_res)).floor}
     end
 end
 
 class Planet
-    attr_reader(:name, :owner, :res, :mins, :gaterange)
+    attr_reader(:name, :owner, :res, :mins, :gaterange, :value)
     attr_reader(:pos)
     attr_accessor(:input_nodes, :output_nodes, :node)
     attr_accessor(:popneeded)
@@ -376,15 +327,20 @@ def parse_stars_file(structname, filename)
 	yield st.new(*fields)
     end
 end
+
+def filecase(f)
+    Dir.open(".").detect {|e| e.downcase == f.downcase }
+end
+
     
 ships = []
-parse_stars_file("Map", GAME + ".map") do |p|
+parse_stars_file("Map", filecase(GAME + ".map")) do |p|
     pla = Planet.new(p.Name, p.X, p.Y)
 end
 
 races = Hash.new
 
-parse_stars_file("Planet_info", GAME + ".p" + PLAYERNO.to_s) do |p|
+parse_stars_file("Planet_info", filecase(GAME + ".p" + PLAYERNO.to_s)) do |p|
     if !races.has_key? p.Owner
 	races[p.Owner] = Race.new(p.Owner)
     end
@@ -392,7 +348,7 @@ parse_stars_file("Planet_info", GAME + ".p" + PLAYERNO.to_s) do |p|
     Planet.lookup(p.Planet_Name).planet_info(p)
 end
 
-parse_stars_file("Fleet_info", GAME + ".f" + PLAYERNO.to_s) do |p|
+parse_stars_file("Fleet_info", filecase(GAME + ".f" + PLAYERNO.to_s)) do |p|
     pla = Planet.lookup(p.Planet)
     dest = Planet.lookup(p.Destination)
     pla = nil if pla && pla.owner.name != RACE
@@ -412,6 +368,8 @@ parse_stars_file("Fleet_info", GAME + ".f" + PLAYERNO.to_s) do |p|
     end
 end
 num_ships = ships.map {|s| s.cnt }.sum
+
+user_adjust(races[RACE]) if defined? user_adjust()
 
 races[RACE].summary
 
