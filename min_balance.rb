@@ -9,6 +9,8 @@ if true
     FREIGHTER = "Fast Shipper"
     PLAYERNO = 2
     WARP = 100.0
+    FACTS = 18
+    FACT_COST = 4
 else
     RACE = "Mercinary"
     FREIGHTER = "Large Freighter"
@@ -79,7 +81,7 @@ class Race
 end
 
 class Planet
-    attr_reader(:name, :owner, :pop, :value, :res, :mins, :extra)
+    attr_reader(:name, :owner, :res, :mins, :extra)
     attr_reader(:pos)
     attr_accessor(:transports)
     def initialize(x, y)
@@ -100,6 +102,7 @@ class Planet
 	i = p.members.index("Iron_MR")
 	@min_rate = p.values[i..i+2].collect {|n| n.to_i}
 	@owner.new_planet(self)
+	@factories = p.Factories.to_i
     end
     def shipped_mins(m)
 	m.each_with_index do |v,i|
@@ -111,6 +114,12 @@ class Planet
 	    print "#{@name} shipped #{@shipped_mins.join(', ')}\n"
 	end
 	targets = @owner.mineral_targets(@res)
+	if @factories < @pop/10000 * FACTS 
+	    # need more germ for factories
+	    more_germ = (@pop/10000 * FACTS - @factories) * FACT_COST
+	    print "#{@name} needs #{more_germ} more germ for factories\n"
+	    targets[2] += more_germ
+	end
 	@extra = []
 	@mins.each_with_index do |v,i|
 	    v += @min_rate[i] * YEARS + @shipped_mins[i]
