@@ -1,9 +1,26 @@
 #!/usr/bin/ruby -w
 
+# TODO
+#  Read race description from file
+#  Handle stopping for gas when delivering
+#  execptions for min and pop targets for some planets
+#  fix hardcoded transport info
+
 UNIT = 1200
 MIN_MINERALS = 200
 YEARS = 3
 GAME = "drknrg"
+HOMEWORLD = {
+    'Kirk' => 1,	# Birds
+    'Sand Castle' => 1, # Zedd :)
+    'Salsa' => 1,	# Mercinary
+    'Mamie' => 1,	# Fermi
+    'Simple' => 1,	# Geovirus :(
+    'Timbuktu' => 1,	# Engineers
+    'Bakwele' => 1,	# Randoms
+    'Libra' => 1,	# Romans
+    'Omega' => 1,	# Speedbumps :(
+}
 if true
     RACE = "Bird"
     FREIGHTER = "Fast Shipper"
@@ -11,17 +28,28 @@ if true
     FACTS = 18
     FACT_COST = 4
     POPMAX = 1100000
-    HOMEWORLD = {'Kirk' => 1, 'Sand Castle' => 1}
+    FUELEFF = 0.85  # IFE
     FUN = [0,0,10,30,40,50,60,70,80,90,100]
+    FREIGHTER_MASS = 209
+    FREIGHTER_FUEL = 2600
+    MAX_POP_VALUE = 70
+    MIN_HOLD_LEVEL = 350_000
+    BREEDER_VALUE = 90
 else
     RACE = "Mercinary"
     FREIGHTER = "Large Freighter \\(2\\)"
+#    FREIGHTER = "Large Freighter"
     PLAYERNO = 1
     FACTS = 25
     FACT_COST = 3
     POPMAX = 1100000
-    HOMEWORLD = {'Salsa' => 1}
+    FUELEFF = 0.85
     FUN = [0,0,0,0,0,0,0,0,0,70,84]
+    FREIGHTER_MASS = 183
+    FREIGHTER_FUEL = 2600
+    MAX_POP_VALUE = 50
+    MIN_HOLD_LEVEL = 350_000
+    BREEDER_VALUE = 90
 end
 
 module Enumerable
@@ -148,12 +176,12 @@ class Planet
 	extra[3] = 0
 	v = @pop + @shipped_mins[3]
 	plamax = @value * POPMAX / 100.0
-	if (@value < 40 || HOMEWORLD[@name]) && v < plamax
+	if (@value < MAX_POP_VALUE || HOMEWORLD[@name]) && v < plamax
 	    extra[3] = ((v - plamax) / (100.0*UNIT)).to_i
-	elsif @value <= 95 && v < 400000
-	    extra[3] = ((v - 400000) / (100.0*UNIT)).to_i
-	elsif @value > 95
-	    extra[3] = ((v - 400000) / (100.0*UNIT)).to_i # trunc
+	elsif @value < BREEDER_VALUE && v < MIN_HOLD_LEVEL
+	    extra[3] = ((v - MIN_HOLD_LEVEL) / (100.0*UNIT)).to_i
+	elsif @value >= BREEDER_VALUE
+	    extra[3] = ((v - MIN_HOLD_LEVEL) / (100.0*UNIT)).to_i # trunc
 	end
 	print "#{@name} 3(#{@value}) at #{v} extra #{@extra[3]}\n"
     end
@@ -162,7 +190,7 @@ class Planet
     end
     def dist(p, loaded)
 	dist = @pos - p.pos
-	mass = 209 + 1200 * loaded
+	mass = FREIGHTER_MASS + UNIT * loaded
 	if loaded == 0 && dist < @gaterange && dist < p.gaterange
 	    1
 	else
@@ -171,7 +199,8 @@ class Planet
 		rtime = (dist / warp**2).ceil
 		f = FUN[warp] * (dist/rtime).ceil / 200
 		fuel = (mass * f + 9)/100 * rtime;
-		break if 0.85 * fuel < 2600  # IFE
+		fuel *= FUELEFF
+		break if fuel < FREIGHTER_FUEL
 		warp -= 1
 	    end
 	    rtime
@@ -215,6 +244,7 @@ class Node
     def addlink(amm, to)
 	@link.push([amm, to])
     end
+    # used for debugging...
     def walk(off)
 	case @type
 	when "ship"
@@ -239,7 +269,6 @@ class Node
 	n = self
 	while n.link.size > 0
 	    e = n.link[0]
-	    e[1]
 	    ret.push(e[1])
 	    if e[0] == 1
 		n.link.shift
@@ -305,10 +334,9 @@ parse_stars_file("Fleet_info", GAME + ".f" + PLAYERNO.to_s) do |p|
 	if pla && p.Destination == '-- ' && p.Task == "(no task here)"
 	    ships.push(Transport.new(p.Unarmed.to_i, pla, 0));
 	elsif dest != nil
-	    print "ETA #{p.ETA}\n"
 	    ships.push(Transport.new(p.Unarmed.to_i, dest, p.ETA.to_i))
 	else
-	    print "#{p.inspect}\n"
+	    print "Ignoring #{p.Fleet_Name} at '#{p.Planet}' going to '#{p.Destination}' task #{p.Task}\n"
 	end
     end
 end
@@ -421,7 +449,7 @@ File.open("network.dmx.x", "r") do |i|
 end
 network.close
 File.unlink("network.dmx.x")
-
+File.unlink("network.out") if File.file?("network.out")
 system("mcf -o -v -q -w network.out ./network.dmx")
 
 File.open("network.out", "r").each do |$_|
@@ -435,12 +463,21 @@ end
 min_name = ['iron', 'boron', 'germ', 'col']
 
 ship = {}
+unused_ships = Hash.new(0)
+unused_in_transit = 0
 ships.each do |s|
 #   if s.eta == 0
 #	s.node.walk('')
 #   end
     s.cnt.times do
 	path = s.node.findpath
+	if path.size <= 1
+	    if s.eta == 0
+		unused_ships[s.dest.name] += 1
+	    else
+		unused_in_transit += 1
+	    end
+	end
 	if s.eta == 0 && path.size > 1
 	    from = s.dest
 	    ship[from] ||= {}
@@ -481,3 +518,9 @@ for from in ship.keys.sort do
 	end
     end
 end
+
+print "\nUnused Freighters:\n"
+for p in unused_ships.keys.sort do
+    print "\t#{p} #{unused_ships[p]}\n"
+end
+print "Unused Freighter currently in transit: #{unused_in_transit}\n"
