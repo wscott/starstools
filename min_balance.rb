@@ -1,17 +1,35 @@
 #!/usr/bin/ruby -w
 
 UNIT = 1200
-PROD_RES = 1500
-PROD_MIN = 5000
-PROD_MAX = 10000
-MINE_MIN = 100
-MINE_MAX = 500
+MIN_MINERALS = 200
 RACE = "Bird"
 FREIGHTER = "Fast Shipper"
 YEARS = 5
 GAME = "drknrg"
 PLAYERNO = 2
 
+module Enumerable
+    # inject(n) { |n, i| ...}
+    def inject(n)
+	each { |i|
+	    n = yield(n, i)
+	}
+	n
+    end
+    def sum
+	inject(0) {|n, i|  n + i }
+    end
+end
+
+class Array
+    def elementsum(a)
+	a.each_with_index do |v,i|
+	    self[i] += v
+	end
+	self
+    end
+end
+	    
 class Point
     attr_reader(:x, :y)
     def initialize(x, y)
@@ -23,14 +41,41 @@ class Point
     end
 end
 
+class Race
+    attr_reader(:name, :planets)
+    def initialize(name)
+	@name = name
+	@planets = []
+    end
+    def new_planet(p)
+	@planets.push(p)
+    end
+    def summary
+	@tot_pla = @planets.size
+	@tot_res = @planets.map {|p| p.res}.sum
+	@tot_min = @planets.map {|p| p.mins}.inject([0, 0, 0]) do |n, i|
+	    n.elementsum(i)
+	end
+	print "Total planets  = #{@tot_pla}\n"
+	print "Total resource = #{@tot_res} (#{@tot_res/@tot_pla})\n"
+	print "Total minerals = #{@tot_min.join(%Q(\t))}\n"
+	print "  Ave minerals = #{@tot_min.map{|n| n / @tot_pla}.join(%Q(\t))}\n"
+	print "scaled @ 500   = #{mineral_targets(500).join(%Q(\t))}\n"
+	print "scaled @ 2000  = #{mineral_targets(2000).join(%Q(\t))}\n"
+	print "-----------------\n"
+    end	
+    def mineral_targets(res)
+	@tot_min.map{|n| (n * (res.to_f / @tot_res)).floor}
+    end
+	
+end
+
 class Planet
-    attr_reader(:name, :owner, :pop, :value, :mines, :fact, :mins, :extra, :prod)
+    attr_reader(:name, :owner, :pop, :value, :res, :mines, :fact, :mins, :extra)
     attr_reader(:pos)
-    attr_writer(:id)
     attr_accessor(:transports)
     def initialize(x, y)
 	@pos = Point.new(x, y)
-	@owner = ""
 	@shipped_mins = [0,0,0]
 	@transports = 0
     end
@@ -41,12 +86,14 @@ class Planet
 	if p.Value		# handle 'nil' values
 	    @value = p.Value.sub('%', '').to_i
 	end
+	@res = p.Resources.to_i
 	@mines = p.Mines.to_i
 	@fact = p.Factories.to_i
 	i = p.members.index("S_Iron")
 	@mins = p.values[i..i+2].collect {|n| n.to_i}
 	i = p.members.index("Iron_MR")
 	@min_rate = p.values[i..i+2].collect {|n| n.to_i}
+	@owner.new_planet(self)
     end
     def shipped_mins(m)
 	m.each_with_index do |v,i|
@@ -57,29 +104,21 @@ class Planet
 	@transports += p
     end
     def calc_extra()
-	res = @pop / 1000 + @fact * 1.2
-	if res > PROD_RES
-	    min = PROD_MIN
-	    max = PROD_MAX
-	    @prod = 1
-	else
-	    min = MINE_MIN
-	    max = MINE_MAX
-	    @prod = 0
-	end
+	targets = @owner.mineral_targets(@res)
 	@extra = []
 	@mins.each_with_index do |v,i|
-	    if v + @min_rate[i] * YEARS + @shipped_mins[i] < min
-		@extra[i] = -((min - v) / UNIT.to_f).ceil
-	    elsif v > max && v > min + UNIT
-		@extra[i] = ((v - min) / UNIT.to_f).floor
-	    else
-		@extra[i] = 0
+	    v += @min_rate[i] * YEARS + @shipped_mins[i]
+	    @extra[i] = ((v - targets[i]) / UNIT.to_f).floor
+	    if @extra[i] == 0 && v < MIN_MINERALS
+		@extra[i] = -1
 	    end
 	end
 	if @shipped_mins.max > 0
 	    print "#{@name} shipped #{@shipped_mins.join(', ')}\n"
 	end
+    end
+    def <=>(b)
+	self.name <=> b.name
     end
 end
 
@@ -106,46 +145,33 @@ def parse_stars_file(structname, filename)
     return array
 end
     
-maxid = 0
-plist = []
 planets = {}
 parse_stars_file("Map", GAME + ".map") { |p|
     pla = Planet.new(p.X, p.Y)
-    pla.id = maxid
-    maxid += 1
-    plist << pla
     planets[p.Name] = pla
 }
+
+races = Hash.new
+
 parse_stars_file("Planet_info", GAME + ".p" + PLAYERNO.to_s) { |p|
+    if !races.has_key? p.Owner
+	races[p.Owner] = Race.new(p.Owner)
+    end
+    p.Owner = races[p.Owner]
     planets[p.Planet_Name].planet_info(p)
-#    print p.inspect, "\n"
 }
 parse_stars_file("Fleet_info", GAME + ".f" + PLAYERNO.to_s) { |p|
     if p.Task == "QuikDrop"
 	planets[p.Destination].shipped_mins([p.Iron, p.Bora, p.Germ].collect {|s| s.to_i})
     end
-#    print p.inspect, "\n"
-    if p.Fleet_Name =~ /^#{RACE} #{FREIGHTER}/ && p.Destination == '-- ' && p.Task == "(no task here)"
-#	print p.inspect, "\n";
+    if p.Fleet_Name =~ /^#{RACE} #{FREIGHTER}/ && 
+	    p.Destination == '-- ' && 
+	    p.Task == "(no task here)"
 	planets[p.Planet].fleets(p.Ship_Cnt.to_i)
     end
 }
 
-names = planets.keys
-names.sort!
-
-module Enumerable
-    # inject(n) { |n, i| ...}
-    def inject(n)
-	each { |i|
-	    n = yield(n, i)
-	}
-	n
-    end
-    def sum
-	inject(0) {|n, i|  n + i }
-    end
-end
+races[RACE].summary
 
 sum = [0, 0, 0]
 source = {}
@@ -154,22 +180,17 @@ for i in 0..2 do
 	source[i] = {}
 	needed[i] = {}
 end
-tot_prod = 0
-for i in names do
-    if planets[i].owner != RACE
-	    next
-    end
-    planets[i].calc_extra
-    tot_prod += planets[i].prod
+for p in races[RACE].planets do
+    p.calc_extra
     for min in 0..2 do
-	extra = planets[i].extra[min]
+	extra = p.extra[min]
 	if extra != 0
 	    if extra > 0
-		source[min][i] = extra
+		source[min][p] = extra
 	    else
-		needed[min][i] = -extra
+		needed[min][p] = -extra
 	    end
-	    print "#{i} #{min} #{extra}\n"
+	    print "#{p.name} #{min} #{extra}\n"
 	    sum[min] += extra
 	end
     end
@@ -178,15 +199,14 @@ end
 for min in 0..2 do
     print "total #{min} #{sum[min]}\n"
 end
-print "#{tot_prod} production planets\n"
 print "done\n"
 
 
 ship = {}
 for min in 0..2 do
     if source[min].values.sum > needed[min].values.sum
-    s = needed[min]
-    n = source[min]
+	s = needed[min]
+	n = source[min]
 	rev = 1
     else
 	s = source[min]
@@ -199,7 +219,7 @@ for min in 0..2 do
     for sp in s.keys do
 	dist[sp] = {}
 	for np in n.keys do
-	    dist[sp][np] = ((planets[sp].pos - planets[np].pos))
+	    dist[sp][np] = ((sp.pos - np.pos))
 	end
     end
     while s.size > 0
@@ -210,7 +230,7 @@ for min in 0..2 do
 	    for np in n.keys do
 		d = dist[sp][np]
 		# if you do not have any ships it will take an extra year
-		if planets[rev==0 ? sp : np].transports <= 0
+		if (rev==0 ? sp : np).transports <= 0
 		    d += 100
 		end
 		if d < dmin
@@ -238,8 +258,8 @@ for min in 0..2 do
 	    from = to
 	    to = t
 	end
-	trans = [amount / UNIT, planets[from].transports].min
-	planets[from].transports -= trans
+	trans = [amount / UNIT, from.transports].min
+	from.transports -= trans
 
 	ship[from] ||= {}
 	ship[from][to] ||= {}
@@ -250,9 +270,9 @@ end
 min_name = ['iron', 'boron', 'germ']
 
 for from in ship.keys.sort do
-    print "Ship from #{from}:\n"
+    print "Ship from #{from.name}:\n"
     for to in ship[from].keys.sort do
-	print "\t#{to} "
+	print "\t#{to.name} "
 	for min in ship[from][to].keys.sort do
 	    amount, trans, max_min = *ship[from][to][min]
 	    print "#{amount.*UNIT}kT #{min_name[min]} "
